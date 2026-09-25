@@ -1,0 +1,122 @@
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: jaeger
+    ports:
+      - "16686:16686" # The Web UI
+      - "4317:4317"   # OTLP gRPC receiver port
+  
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      - RABBITMQ_DEFAULT_USER=guest
+      - RABBITMQ_DEFAULT_PASS=guest
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+  traefik:
+    image: traefik:v3.7
+    command: 
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8080:8080"
+    volumes:
+      - "/var/run/docker.sock:/var/run/docker.sock:ro"
+  user-service:
+    build:
+      context: .
+      dockerfile: services/user-service/Dockerfile
+    # ports:
+    #   - "8001:8000"
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.user-service.entrypoints=web"
+      - "traefik.http.routers.user-service.rule=PathPrefix(`/users`) || PathPrefix(`/login`) || PathPrefix(`/docs`) || PathPrefix(`/openapi.json`)"
+      - "traefik.http.services.user-service.loadbalancer.server.port=8000"
+    environment:
+      - DATABASE_URL=postgresql+psycopg://postgres:password@db:5432/user_db
+    depends_on:
+      - db
+      - product-service
+      - jaeger
+    healthcheck:
+      # We use Python's built-in urllib so we don't have to install 'curl' in the container
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/readiness')\" || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+  order-service:
+    build:
+      context: .
+      dockerfile: services/order-service/Dockerfile
+    ports:
+      - "8002:8000" # Exposing directly for testing today
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: user_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data 
+
+  product-service:
+    build: 
+      context: .
+      dockerfile: services/product-service/Dockerfile
+  inventory-service:
+    build:
+      context: .
+      dockerfile: services/inventory-service/Dockerfile
+    ports:
+      - "8003:8000" # Exposing for easy testing
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  loki:
+    image: grafana/loki:latest
+    container_name: loki_microservices
+    ports:
+      - "3100:3100"
+    command: -config.file=/etc/loki/local-config.yaml
+
+  promtail:
+    image: grafana/promtail:latest
+    container_name: promtail_microservices
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./promtail-config.yaml:/etc/promtail/config.yml
+    command: -config.file=/etc/promtail/config.yml
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana_microservices
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin # Default password for our dashboard
+    depends_on:
+      - loki
+volumes:
+  postgres_data:
+
+  

@@ -1,0 +1,71 @@
+# ============================================================
+# .dockerignore
+# Files listed here are EXCLUDED from the Docker build context.
+# Anything needed to build/run the image is NOT listed here:
+#   - pyproject.toml, uv.lock   (dependencies)
+#   - services/                 (application code)
+#   - main.py                  (entry point)
+#   - compose.yaml, Dockerfile  (build & orchestration)
+# ============================================================
+
+# --- Version control (not needed in the image) ---
+.git
+.gitignore
+.gitattributes
+
+# --- Python bytecode / caches (regenerated at runtime, just bloat) ---
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+.tox/
+.nox/
+.hypothesis/
+
+# --- Virtual environments (CRITICAL: Docker builds its own .venv) ---
+# If you copy your local .venv, it will overwrite the one created by
+# `uv sync` inside the image and break the build.
+.venv/
+venv/
+env/
+ENV/
+env.bak/
+venv.bak/
+
+# --- Local databases / runtime data (dev artifacts, not for the image) ---
+*.db
+*.sqlite
+*.sqlite3
+database.db
+
+# --- Build / packaging artifacts (generated, not source) ---
+build/
+dist/
+*.egg-info/
+*.egg
+.eggs/
+wheels/
+*.whl
+
+# --- IDE / editor files (machine-specific, not needed) ---
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# --- Logs (runtime output, not needed at build time) ---
+*.log
+logs/
+
+# --- Environment / secrets (NEVER ship credentials into the image) ---
+.env
+.env.*
+!.env.example
